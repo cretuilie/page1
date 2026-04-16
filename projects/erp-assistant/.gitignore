@@ -1,0 +1,10 @@
+# Variabile de mediu - NICIODATA pe GitHub!
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
