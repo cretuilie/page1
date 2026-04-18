@@ -60,7 +60,7 @@ TOOLS = [
                 },
                 "page_size": {
                     "type": "integer",
-                    "description": "Numărul maxim de produse per gestiune (implicit 2000, max 5000)",
+                    "description": "Numărul maxim de produse per gestiune (implicit 500, max 5000). Crește doar dacă ai nevoie de lista completă.",
                 },
             },
             "required": [],
@@ -184,6 +184,28 @@ TOOLS = [
 ]
 
 
+MAX_STOCK_ROWS = 300  # Limită tokeni Claude: trimitem max 300 produse per query
+STOCK_FIELDS = {"gestiune", "info3", "info4", "stoc", "pout", "tax"}  # câmpuri esențiale stoc
+
+
+def _trim_stock(result: list) -> list | dict:
+    """Păstrează doar câmpurile esențiale și limitează numărul de rânduri."""
+    if not isinstance(result, list):
+        return result
+    trimmed = []
+    for item in result:
+        if "eroare" in item:
+            trimmed.append(item)
+            continue
+        row = {k: v for k, v in item.items() if k in STOCK_FIELDS}
+        trimmed.append(row)
+    total = len(trimmed)
+    trimmed = trimmed[:MAX_STOCK_ROWS]
+    if total > MAX_STOCK_ROWS:
+        trimmed.append({"_nota": f"Afișate {MAX_STOCK_ROWS} din {total} produse. Folosește filtru sau gestiune specifică pentru mai multă precizie."})
+    return trimmed
+
+
 def run_tool(tool_name: str, tool_input: dict) -> str:
     """Execută unealta cerută de Claude și returnează rezultatul ca string JSON."""
     try:
@@ -192,8 +214,9 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
                 filter=tool_input.get("filter"),
                 min_stoc=tool_input.get("min_stoc"),
                 locid=tool_input.get("locid"),
-                page_size=tool_input.get("page_size", 2000),
+                page_size=tool_input.get("page_size", 500),
             )
+            result = _trim_stock(result)
         elif tool_name == "get_items":
             result = ea.get_items(filter=tool_input.get("filter"))
         elif tool_name == "get_invoice_balance":
@@ -277,7 +300,7 @@ def chat(messages: list) -> tuple[str, list]:
 
 def main():
     print("=" * 55)
-    print("   ASISTENT ERP ExpertAccounts  —  powered by Claude")
+    print("   SuperMatrix  —  powered by Claude (Ilie Cretu)")
     print("=" * 55)
     print("Întreabă despre stocuri, facturi sau parteneri.")
     print("Scrie 'exit' sau 'iesire' pentru a închide.\n")
