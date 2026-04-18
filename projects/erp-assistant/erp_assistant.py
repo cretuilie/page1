@@ -42,7 +42,7 @@ Reguli:
 TOOLS = [
     {
         "name": "get_stock",
-        "description": "Returnează stocul curent din toate gestiunile ERP sau dintr-una specificată. Gestiuni disponibile: 1=Marfuri, 11=Apa&CO2, 12=Alte materii, 13=Aqua 0.5L, 15=PET, 17=Deseuri, 18=Tuburi PET.",
+        "description": "Returnează stocul curent din toate gestiunile ERP sau dintr-una specificată. Gestiuni disponibile: 1=Marfuri Cisnadie, 11=Materii prime, 12=Alte materiale, 13=Finite, 15=Semifabricate, 17=Deseuri, 18=Amb/Paleti.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -56,7 +56,7 @@ TOOLS = [
                 },
                 "locid": {
                     "type": "integer",
-                    "description": "ID gestiune specifică (1=Marfuri, 11=Apa&CO2, 12=Alte materii, 13=Aqua 0.5L, 15=PET, 17=Deseuri, 18=Tuburi PET). Omite pentru toate gestiunile.",
+                    "description": "ID gestiune specifică (1=Marfuri Cisnadie, 11=Materii prime, 12=Alte materiale, 13=Finite, 15=Semifabricate, 17=Deseuri, 18=Amb/Paleti). Omite pentru toate gestiunile.",
                 },
                 "page_size": {
                     "type": "integer",

@@ -68,13 +68,13 @@ def _post(data_dict: dict) -> str:
 
 # Toate gestiunile cu stoc descoperite în ExpertAccounts
 GESTIUNI = {
-    1: "Marfuri",
-    11: "Apa & CO2",
-    12: "Alte materii",
-    13: "Aqua 0.5L",
-    15: "PET",
+    1:  "Marfuri Cisnadie",
+    11: "Materii prime",
+    12: "Alte materiale",
+    13: "Finite",
+    15: "Semifabricate",
     17: "Deseuri",
-    18: "Tuburi PET",
+    18: "Amb/Paleti",
 }
 
 
