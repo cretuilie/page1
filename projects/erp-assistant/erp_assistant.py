@@ -290,6 +290,82 @@ def chat(messages: list) -> tuple[str, list]:
     return "", messages
 
 
+# Cuvinte cheie pentru detectarea interogărilor simple de stoc
+_STOCK_TRIGGERS = ["stoc", "gestiune", "inventar", "marfa", "marfă", "produse"]
+_COMPLEX_TRIGGERS = ["compară", "compara", "analizează", "analizeaza", "total", "suma",
+                     "factură", "factura", "vânzări", "vanzari", "luna", "perioadă",
+                     "față de", "fata de", "cel mai", "raport"]
+
+# Mapare cuvinte cheie → locid gestiune
+_GESTIUNE_MAP = {
+    "marfuri cisnadie": 1, "marfuri": 1, "cisnadie": 1,
+    "materii prime": 11, "materii": 11,
+    "alte materiale": 12, "materiale": 12,
+    "finite": 13,
+    "semifabricate": 15,
+    "deseuri": 17, "deșeuri": 17,
+    "amb/paleti": 18, "ambalaje": 18, "paleti": 18, "paleți": 18,
+}
+
+
+def _is_simple_stock_query(text: str) -> bool:
+    t = text.lower()
+    return (any(k in t for k in _STOCK_TRIGGERS) and
+            not any(k in t for k in _COMPLEX_TRIGGERS))
+
+
+def _detect_locid(text: str) -> int | None:
+    t = text.lower()
+    for keyword, locid in _GESTIUNE_MAP.items():
+        if keyword in t:
+            return locid
+    return None
+
+
+def _display_stock_direct(user_input: str):
+    """Afișează stocul progresiv direct din Python, fără Claude."""
+    import time
+    from tabulate import tabulate
+
+    locid = _detect_locid(user_input)
+    locid_list = [locid] if locid else list(ea.GESTIUNI.keys())
+
+    total_produse = 0
+    for i, lid in enumerate(locid_list):
+        gestiune_name = ea.GESTIUNI[lid]
+        print(f"  [ERP] Se încarcă {gestiune_name}...", flush=True)
+
+        rows = ea.get_stock(locid=lid, page_size=500)
+
+        produse = [r for r in rows if "eroare" not in r]
+        if not produse:
+            eroare = rows[0].get("eroare", "") if rows else "fără date"
+            print(f"  {gestiune_name}: {eroare}\n")
+        else:
+            table_rows = [
+                [
+                    r.get("categorie", ""),
+                    r.get("descriere", ""),
+                    r.get("grupa", ""),
+                    r.get("cod", ""),
+                    r.get("stoc", ""),
+                    r.get("pret", ""),
+                    r.get("tva", ""),
+                    gestiune_name,
+                ]
+                for r in produse
+            ]
+            headers = ["Grupa", "Cod Produs", "Descriere", "UM", "Stoc", "Preț", "TVA", "Gestiune"]
+            print(f"\n{tabulate(table_rows, headers=headers, tablefmt='simple', floatfmt='.2f')}")
+            print(f"  → {len(produse)} produse în {gestiune_name}\n")
+            total_produse += len(produse)
+
+        if i < len(locid_list) - 1:
+            time.sleep(3)
+
+    print(f"Total: {total_produse} produse\n")
+
+
 def main():
     print("=" * 55)
     print("   SuperMatrix  —  powered by Claude (Ilie Cretu)")
@@ -312,15 +388,20 @@ def main():
             print("La revedere!")
             break
 
-        messages.append({"role": "user", "content": user_input})
-
-        try:
-            raspuns, messages = chat(messages)
-            print(f"\nAsistent: {raspuns}\n")
-        except anthropic.APIError as e:
-            print(f"\nEroare API Claude: {e}\n")
-        except Exception as e:
-            print(f"\nEroare: {e}\n")
+        if _is_simple_stock_query(user_input):
+            try:
+                _display_stock_direct(user_input)
+            except Exception as e:
+                print(f"\nEroare stoc: {e}\n")
+        else:
+            messages.append({"role": "user", "content": user_input})
+            try:
+                raspuns, messages = chat(messages)
+                print(f"\nAsistent: {raspuns}\n")
+            except anthropic.APIError as e:
+                print(f"\nEroare API Claude: {e}\n")
+            except Exception as e:
+                print(f"\nEroare: {e}\n")
 
 
 if __name__ == "__main__":
