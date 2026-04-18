@@ -42,21 +42,25 @@ Reguli:
 TOOLS = [
     {
         "name": "get_stock",
-        "description": "Returnează stocul curent de produse din ERP. Folosește când utilizatorul întreabă despre stoc, cantități disponibile sau produse din inventar.",
+        "description": "Returnează stocul curent din toate gestiunile ERP sau dintr-una specificată. Gestiuni disponibile: 1=Marfuri, 11=Apa&CO2, 12=Alte materii, 13=Aqua 0.5L, 15=PET, 17=Deseuri, 18=Tuburi PET.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "filter": {
                     "type": "string",
-                    "description": "Text de filtrare după numele produsului (ex: 'fasole', 'carne')",
+                    "description": "Text de filtrare după numele produsului (ex: 'fasole', 'carne', 'pet')",
                 },
                 "min_stoc": {
                     "type": "number",
                     "description": "Returnează doar produse cu stoc mai mare sau egal cu această valoare",
                 },
+                "locid": {
+                    "type": "integer",
+                    "description": "ID gestiune specifică (1=Marfuri, 11=Apa&CO2, 12=Alte materii, 13=Aqua 0.5L, 15=PET, 17=Deseuri, 18=Tuburi PET). Omite pentru toate gestiunile.",
+                },
                 "page_size": {
                     "type": "integer",
-                    "description": "Numărul maxim de produse returnate (implicit 2000, max 5000)",
+                    "description": "Numărul maxim de produse per gestiune (implicit 2000, max 5000)",
                 },
             },
             "required": [],
@@ -187,6 +191,7 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
             result = ea.get_stock(
                 filter=tool_input.get("filter"),
                 min_stoc=tool_input.get("min_stoc"),
+                locid=tool_input.get("locid"),
                 page_size=tool_input.get("page_size", 2000),
             )
         elif tool_name == "get_items":

@@ -66,43 +66,69 @@ def _post(data_dict: dict) -> str:
     return text
 
 
+# Toate gestiunile cu stoc descoperite în ExpertAccounts
+GESTIUNI = {
+    1: "Marfuri",
+    11: "Apa & CO2",
+    12: "Alte materii",
+    13: "Aqua 0.5L",
+    15: "PET",
+    17: "Deseuri",
+    18: "Tuburi PET",
+}
+
+
 def get_stock(
     filter: str = None,
     where: dict = None,
     min_stoc: float = None,
-    page: int = 1,
+    locid: int = None,
     page_size: int = 2000,
 ) -> list[dict]:
     """
-    Returnează stocul curent (configurat via Var1=sqlStocArt() în ExpertAccounts).
+    Returnează stocul curent din toate gestiunile (sau una specificată).
 
     Args:
-        filter: text de filtrare după descriere/categorie (caută în câmpul 'grupa')
+        filter: text de filtrare după descriere produs
         where: filtrare avansată JSON, ex: {"categorie": ["ilike", "FASOLE%"]}
         min_stoc: returnează doar produse cu stoc >= min_stoc
-        page: numărul paginii
-        page_size: înregistrări per pagină (max 5000)
+        locid: ID gestiune specifică (None = toate gestiunile)
+        page_size: înregistrări per pagină per gestiune (max 5000)
 
     Returns:
-        Lista de dict-uri cu: categorie, grupa, descriere, cod, stoc, pret, tva
+        Lista de dict-uri cu: gestiune, categorie, grupa, descriere, cod, stoc, pret, tva
     """
-    params = {"pgno": page, "pgsize": min(page_size, 5000)}
-
-    # Construim clauza where (folosim numele interne ale coloanelor, nu aliasurile)
-    # info1=categorie, info2=grupa/descriere produs, stoc=stoc, pout=pret
+    # Construim clauza where
     where_clause = dict(where) if where else {}
     if filter:
         where_clause["info2"] = ["ilike", f"%{filter}%"]
     if min_stoc is not None:
         where_clause["stoc"] = ["gt", min_stoc]
-    if where_clause:
-        params["where"] = json.dumps(where_clause)
 
-    raw = _get(params)
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return [{"eroare": raw}]
+    locid_list = [locid] if locid else list(GESTIUNI.keys())
+    rezultate = []
+
+    for lid in locid_list:
+        params = {
+            "pgsize": min(page_size, 5000),
+            "params": json.dumps({"locid": lid}),
+        }
+        if where_clause:
+            params["where"] = json.dumps(where_clause)
+
+        raw = _get(params)
+        try:
+            produse = json.loads(raw)
+            for p in produse:
+                p["gestiune"] = GESTIUNI.get(lid, f"Gestiune {lid}")
+            rezultate.extend(produse)
+        except json.JSONDecodeError:
+            rezultate.append({"eroare": raw, "gestiune": GESTIUNI.get(lid, str(lid))})
+
+        if lid != locid_list[-1]:
+            time.sleep(RETRY_DELAY)
+
+    return rezultate
 
 
 def get_items(filter: str = None) -> list[dict]:
