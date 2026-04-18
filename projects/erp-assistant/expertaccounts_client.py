@@ -20,7 +20,7 @@ T1 = os.environ["EA_T1"]
 T2 = os.environ["EA_T2"]
 
 MAX_RETRIES = 10
-RETRY_DELAY = 2  # secunde
+RETRY_DELAY = 3  # secunde — rate limit ExpertAccounts: 3s între apeluri
 
 
 def _base_params(api_name: str = "public") -> dict:
@@ -34,7 +34,7 @@ def _get(extra_params: dict) -> str:
         response = requests.get(BASE_URL, params=params, timeout=30)
         response.raise_for_status()
         text = response.text.strip()
-        if text.startswith("ERR:10"):
+        if text.startswith("ERR:10") or "rate limit" in text.lower() or "wait for your previous" in text.lower():
             time.sleep(RETRY_DELAY)
             continue
         return text
@@ -66,26 +66,37 @@ def _post(data_dict: dict) -> str:
     return text
 
 
-def get_stock(locid: int = 1, filter: str = None, show_zero: bool = False) -> list[dict]:
+def get_stock(
+    filter: str = None,
+    where: dict = None,
+    min_stoc: float = None,
+    page: int = 1,
+    page_size: int = 2000,
+) -> list[dict]:
     """
-    Returnează stocul curent de la o locație.
+    Returnează stocul curent (configurat via Var1=sqlStocArt() în ExpertAccounts).
 
     Args:
-        locid: ID-ul locatiei (implicit 1)
-        filter: text de filtrare după nume/cod produs
-        show_zero: include produse cu stoc 0
+        filter: text de filtrare după descriere/categorie (caută în câmpul 'grupa')
+        where: filtrare avansată JSON, ex: {"categorie": ["ilike", "FASOLE%"]}
+        min_stoc: returnează doar produse cu stoc >= min_stoc
+        page: numărul paginii
+        page_size: înregistrări per pagină (max 5000)
 
     Returns:
-        Lista de dict-uri cu: itmid, info1-4, stoc, tax
+        Lista de dict-uri cu: categorie, grupa, descriere, cod, stoc, pret, tva
     """
-    params = {
-        "locid": locid,
-        "infos": "info1,info2,info3,info4",
-        "json": "true",
-        "sz": "1" if show_zero else "0",
-    }
+    params = {"pgno": page, "pgsize": min(page_size, 5000)}
+
+    # Construim clauza where (folosim numele interne ale coloanelor, nu aliasurile)
+    # info1=categorie, info2=grupa/descriere produs, stoc=stoc, pout=pret
+    where_clause = dict(where) if where else {}
     if filter:
-        params["filter"] = filter
+        where_clause["info2"] = ["ilike", f"%{filter}%"]
+    if min_stoc is not None:
+        where_clause["stoc"] = ["gt", min_stoc]
+    if where_clause:
+        params["where"] = json.dumps(where_clause)
 
     raw = _get(params)
     try:

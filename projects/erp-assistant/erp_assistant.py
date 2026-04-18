@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Asistent conversațional pentru ExpertAccounts ERP.
 
@@ -11,8 +12,13 @@ Utilizare:
 import json
 import os
 
+import sys
 import anthropic
 from dotenv import load_dotenv
+
+# Forțăm UTF-8 pe Windows pentru caractere românești
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import expertaccounts_client as ea
 
@@ -40,17 +46,17 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "locid": {
-                    "type": "integer",
-                    "description": "ID-ul locației/depozitului (implicit 1)",
-                },
                 "filter": {
                     "type": "string",
-                    "description": "Text de filtrare după numele sau codul produsului",
+                    "description": "Text de filtrare după numele produsului (ex: 'fasole', 'carne')",
                 },
-                "show_zero": {
-                    "type": "boolean",
-                    "description": "Dacă true, include și produsele cu stoc 0",
+                "min_stoc": {
+                    "type": "number",
+                    "description": "Returnează doar produse cu stoc mai mare sau egal cu această valoare",
+                },
+                "page_size": {
+                    "type": "integer",
+                    "description": "Numărul maxim de produse returnate (implicit 2000, max 5000)",
                 },
             },
             "required": [],
@@ -179,9 +185,9 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
     try:
         if tool_name == "get_stock":
             result = ea.get_stock(
-                locid=tool_input.get("locid", 1),
                 filter=tool_input.get("filter"),
-                show_zero=tool_input.get("show_zero", False),
+                min_stoc=tool_input.get("min_stoc"),
+                page_size=tool_input.get("page_size", 2000),
             )
         elif tool_name == "get_items":
             result = ea.get_items(filter=tool_input.get("filter"))
