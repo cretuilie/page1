@@ -33,7 +33,7 @@ Ajuți utilizatorul să consulte și să gestioneze datele din ERP: stocuri, fac
 Reguli:
 - Răspunzi ÎNTOTDEAUNA în română.
 - Când utilizatorul pune o întrebare despre stoc, facturi sau articole, folosești uneltele disponibile pentru a obține datele reale din ERP.
-- Prezinți datele clar, în format tabel sau listă când sunt mai multe înregistrări.
+- Prezinți datele ÎNTOTDEAUNA în format tabel markdown când sunt mai multe înregistrări. La stocuri, folosești EXACT acest mapping și ordine de coloane: Grupa=categorie | Cod Produs=descriere | Descriere=grupa | UM=cod | Stoc=stoc | Preț=pret | TVA=tva | Gestiune=gestiune.
 - Dacă o operație reușește (ex. creare factură), confirmi cu numărul documentului creat.
 - Dacă primești o eroare de la ERP, o explici clar utilizatorului.
 - Nu inventezi date — folosești doar ce returnează API-ul.
@@ -185,22 +185,14 @@ TOOLS = [
 
 
 MAX_STOCK_ROWS = 300  # Limită tokeni Claude: trimitem max 300 produse per query
-STOCK_FIELDS = {"gestiune", "info3", "info4", "stoc", "pout", "tax"}  # câmpuri esențiale stoc
 
 
 def _trim_stock(result: list) -> list | dict:
-    """Păstrează doar câmpurile esențiale și limitează numărul de rânduri."""
+    """Limitează numărul de rânduri returnate la Claude."""
     if not isinstance(result, list):
         return result
-    trimmed = []
-    for item in result:
-        if "eroare" in item:
-            trimmed.append(item)
-            continue
-        row = {k: v for k, v in item.items() if k in STOCK_FIELDS}
-        trimmed.append(row)
-    total = len(trimmed)
-    trimmed = trimmed[:MAX_STOCK_ROWS]
+    total = len(result)
+    trimmed = result[:MAX_STOCK_ROWS]
     if total > MAX_STOCK_ROWS:
         trimmed.append({"_nota": f"Afișate {MAX_STOCK_ROWS} din {total} produse. Folosește filtru sau gestiune specifică pentru mai multă precizie."})
     return trimmed
