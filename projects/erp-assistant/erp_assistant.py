@@ -316,9 +316,36 @@ def _is_simple_stock_query(text: str) -> bool:
 
 def _detect_locid(text: str) -> int | None:
     t = text.lower()
-    for keyword, locid in _GESTIUNE_MAP.items():
+    # Sortăm după lungime descrescător ca "materii prime" să fie testat înaintea "materii"
+    for keyword, locid in sorted(_GESTIUNE_MAP.items(), key=lambda x: -len(x[0])):
         if keyword in t:
             return locid
+    return None
+
+
+# Cuvinte de ignorat la extragerea filtrului de produs
+_STOP_WORDS = {
+    "stoc", "stocul", "gestiune", "gestiunea", "inventar", "produse", "produs",
+    "arata", "arată", "afiseaza", "afișează", "ce", "am", "ai", "avem", "din",
+    "de", "cu", "la", "in", "în", "si", "și", "sau", "pentru", "despre",
+    "toate", "tot", "toata", "toată", "toate", "lista", "listă",
+}
+
+# Eliminăm și cuvintele cheie ale gestiunilor din filtru
+_GESTIUNE_WORDS = {w for k in _GESTIUNE_MAP for w in k.split()}
+
+
+def _detect_filter(text: str) -> str | None:
+    """Extrage cuvântul de filtru produs din textul utilizatorului."""
+    import re
+    # Căutăm pattern explicit: "de [produs]", "cu [produs]", "pentru [produs]"
+    match = re.search(r'\b(?:de|cu|pentru)\s+([a-zăâîșțşţA-ZĂÂÎȘȚŞŢ0-9][a-zăâîșțşţA-ZĂÂÎȘȚŞŢ0-9.\-\s]{1,30}?)(?:\s+(?:din|in|în|la|si|și)|$)', text, re.IGNORECASE)
+    if match:
+        candidate = match.group(1).strip().lower()
+        # Eliminăm dacă e un cuvânt de stop sau gestiune
+        words = [w for w in candidate.split() if w not in _STOP_WORDS and w not in _GESTIUNE_WORDS]
+        if words:
+            return " ".join(words)
     return None
 
 
@@ -328,14 +355,18 @@ def _display_stock_direct(user_input: str):
     from tabulate import tabulate
 
     locid = _detect_locid(user_input)
+    filter_text = _detect_filter(user_input)
     locid_list = [locid] if locid else list(ea.GESTIUNI.keys())
+
+    if filter_text:
+        print(f"  Filtru produs: '{filter_text}'\n", flush=True)
 
     total_produse = 0
     for i, lid in enumerate(locid_list):
         gestiune_name = ea.GESTIUNI[lid]
         print(f"  [ERP] Se încarcă {gestiune_name}...", flush=True)
 
-        rows = ea.get_stock(locid=lid, page_size=500)
+        rows = ea.get_stock(locid=lid, filter=filter_text, page_size=500)
 
         produse = [r for r in rows if "eroare" not in r]
         if not produse:
