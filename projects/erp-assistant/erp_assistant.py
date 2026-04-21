@@ -28,7 +28,7 @@ client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 MODEL = "claude-sonnet-4-6"
 
 SYSTEM_PROMPT = """Ești un asistent ERP specializat pentru ExpertAccounts România.
-Ajuți utilizatorul să consulte și să gestioneze datele din ERP: stocuri, facturi, parteneri, articole.
+Ajuți utilizatorul să consulte și să gestioneze datele din ERP: stocuri, facturi, parteneri, articole, comenzi, vânzări, contabilitate.
 
 Reguli:
 - Răspunzi ÎNTOTDEAUNA în română.
@@ -156,13 +156,29 @@ TOOLS = [
     },
     {
         "name": "query_data",
-        "description": "Interogare generică pe bazele de date ERP. Folosește pentru întrebări avansate despre parteneri, vânzări, contabilitate. Surse disponibile: items, partners, gl, bi_sales.",
+        "description": """Interogare generică pe bazele de date ERP. Surse disponibile:
+- items: nomenclator articole
+- orders: comenzi deschise/finalizate
+- partners: clienți și furnizori
+- partbranch: punctele de lucru ale partenerilor
+- gl: jurnale contabile (General Ledger)
+- inv_locations: gestiunile/locațiile de inventar
+- bi_sales: rapoarte vânzări Business Intelligence
+- items_rev: articole cu revizie
+- sqlItemsMaster(): master nomenclator extins
+- sqlItemsWebFeed(): feed articole pentru web
+- sqlOrderDetails(): detalii linii comenzi
+Folosește pentru întrebări despre comenzi, parteneri, vânzări, contabilitate, gestiuni.""",
         "input_schema": {
             "type": "object",
             "properties": {
                 "src": {
                     "type": "string",
-                    "enum": ["items", "partners", "gl", "bi_sales", "items_rev"],
+                    "enum": [
+                        "items", "orders", "partners", "partbranch",
+                        "gl", "inv_locations", "bi_sales", "items_rev",
+                        "sqlItemsMaster()", "sqlItemsWebFeed()", "sqlOrderDetails()",
+                    ],
                     "description": "Sursa de date de interogat",
                 },
                 "fields": {
@@ -176,6 +192,10 @@ TOOLS = [
                 "orderby": {
                     "type": "string",
                     "description": "Câmpuri de sortare",
+                },
+                "page_size": {
+                    "type": "integer",
+                    "description": "Numărul maxim de înregistrări returnate (implicit 2000, max 5000)",
                 },
             },
             "required": ["src"],
@@ -228,12 +248,23 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
                 remarks=tool_input.get("remarks", ""),
             )
         elif tool_name == "query_data":
-            result = ea.query_data(
-                src=tool_input["src"],
-                fields=tool_input.get("fields", "*"),
-                where=tool_input.get("where"),
-                orderby=tool_input.get("orderby"),
-            )
+            export_sources = {"orders", "partners", "bi_sales", "sqlOrderDetails()"}
+            if tool_input["src"] in export_sources:
+                result = ea.get_export_data(
+                    src=tool_input["src"],
+                    fields=tool_input.get("fields", "*"),
+                    where=tool_input.get("where"),
+                    orderby=tool_input.get("orderby"),
+                    page_size=tool_input.get("page_size", 2000),
+                )
+            else:
+                result = ea.query_data(
+                    src=tool_input["src"],
+                    fields=tool_input.get("fields", "*"),
+                    where=tool_input.get("where"),
+                    orderby=tool_input.get("orderby"),
+                    page_size=tool_input.get("page_size", 2000),
+                )
         else:
             result = {"eroare": f"Unealtă necunoscută: {tool_name}"}
     except Exception as e:
@@ -335,15 +366,23 @@ _STOP_WORDS = {
 _GESTIUNE_WORDS = {w for k in _GESTIUNE_MAP for w in k.split()}
 
 
+_CHAR_CLASS = r'[a-zăâîșțşţA-ZĂÂÎȘȚŞŢ0-9][a-zăâîșțşţA-ZĂÂÎȘȚŞŢ0-9,.\-\s]{1,30}?'
+_TERMINATOR = r'(?:\s+(?:din|in|în|la|si|și)|$)'
+
+
 def _detect_filter(text: str) -> str | None:
     """Extrage cuvântul de filtru produs din textul utilizatorului."""
     import re
-    # Căutăm pattern explicit: "de [produs]", "cu [produs]", "pentru [produs]"
-    match = re.search(r'\b(?:de|cu|pentru)\s+([a-zăâîșțşţA-ZĂÂÎȘȚŞŢ0-9][a-zăâîșțşţA-ZĂÂÎȘȚŞŢ0-9.\-\s]{1,30}?)(?:\s+(?:din|in|în|la|si|și)|$)', text, re.IGNORECASE)
+    # Pattern 1: prepoziție — "de [produs]", "cu [produs]", "pentru [produs]"
+    match = re.search(rf'\b(?:de|cu|pentru)\s+({_CHAR_CLASS}){_TERMINATOR}', text, re.IGNORECASE)
+    # Pattern 2: fallback — "stoc [produs]", "stocul [produs]"
+    if not match:
+        match = re.search(rf'\b(?:stoc(?:ul)?|inventar)\s+({_CHAR_CLASS}){_TERMINATOR}', text, re.IGNORECASE)
     if match:
         candidate = match.group(1).strip().lower()
-        # Eliminăm dacă e un cuvânt de stop sau gestiune
-        words = [w for w in candidate.split() if w not in _STOP_WORDS and w not in _GESTIUNE_WORDS]
+        # Separator zecimal: ERP-ul românesc folosește virgulă (0,5), nu punct (0.5)
+        candidate = re.sub(r'(\d)\.(\d)', r'\1,\2', candidate)
+        words = [w for w in candidate.split() if w not in _STOP_WORDS and w not in _GESTIUNE_WORDS and len(w) >= 2]
         if words:
             return " ".join(words)
     return None
@@ -368,7 +407,7 @@ def _display_stock_direct(user_input: str):
 
         rows = ea.get_stock(locid=lid, filter=filter_text, page_size=500)
 
-        produse = [r for r in rows if "eroare" not in r]
+        produse = sorted([r for r in rows if "eroare" not in r], key=lambda r: r.get("descriere", ""))
         if not produse:
             eroare = rows[0].get("eroare", "") if rows else "fără date"
             print(f"  {gestiune_name}: {eroare}\n")

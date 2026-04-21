@@ -265,6 +265,86 @@ def create_invoice(
     return text
 
 
+# Tokeni pentru endpointul get_exportdata — câte o pereche per sursă configurată în ERP
+EXPORT_TOKENS = {
+    "orders": {
+        "t1": os.environ.get("EA_EXPORT_ORDERS_T1", ""),
+        "t2": os.environ.get("EA_EXPORT_ORDERS_T2", ""),
+    },
+    "partners": {
+        "t1": os.environ.get("EA_EXPORT_PARTNERS_T1", ""),
+        "t2": os.environ.get("EA_EXPORT_PARTNERS_T2", ""),
+    },
+    "bi_sales": {
+        "t1": os.environ.get("EA_EXPORT_BISALES_T1", ""),
+        "t2": os.environ.get("EA_EXPORT_BISALES_T2", ""),
+    },
+    "sqlOrderDetails()": {
+        "t1": os.environ.get("EA_EXPORT_ORDERDETAILS_T1", ""),
+        "t2": os.environ.get("EA_EXPORT_ORDERDETAILS_T2", ""),
+    },
+}
+
+
+def get_export_data(
+    src: str,
+    fields: str = "*",
+    where: dict = None,
+    orderby: str = None,
+    page_size: int = 2000,
+) -> list[dict]:
+    """
+    Interogare pe endpointul get_exportdata cu tokeni specifici per sursă.
+    Fiecare sursă are propria pereche (t1, t2) configurată în ExpertAccounts admin.
+
+    Args:
+        src: sursa de date ('orders', 'partners', 'bi_sales', 'sqlOrderDetails()')
+        fields: câmpurile dorite, separate prin virgulă (implicit '*')
+        where: dict cu condiții WHERE JSON
+        orderby: câmpuri de sortare
+        page_size: numărul maxim de înregistrări (max 5000)
+
+    Returns:
+        Lista de înregistrări ca dict-uri
+    """
+    tokens = EXPORT_TOKENS.get(src)
+    if not tokens or not tokens["t1"]:
+        return [{"eroare": f"Sursa '{src}' nu are tokeni configurați în .env"}]
+
+    params = {
+        "api": "public",
+        "t1": tokens["t1"],
+        "t2": tokens["t2"],
+        "get_exportdata": "1",
+        "Var1": src,
+        "pgsize": min(page_size, 5000),
+    }
+    if fields != "*":
+        params["fields"] = fields
+    if where:
+        params["where"] = json.dumps(where)
+    if orderby:
+        params["orderby"] = orderby
+
+    for attempt in range(MAX_RETRIES):
+        response = requests.get(BASE_URL, params=params, timeout=30)
+        response.raise_for_status()
+        text = response.text.strip()
+        if text.startswith("ERR:10") or "rate limit" in text.lower() or "wait for your previous" in text.lower():
+            time.sleep(RETRY_DELAY)
+            continue
+        break
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        lines = text.splitlines()
+        if len(lines) < 2:
+            return [{"eroare": text}]
+        headers = lines[0].split("\t")
+        return [dict(zip(headers, line.split("\t"))) for line in lines[1:] if line]
+
+
 def query_data(
     src: str,
     fields: str = "*",
