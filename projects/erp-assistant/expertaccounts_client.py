@@ -283,6 +283,10 @@ EXPORT_TOKENS = {
         "t1": os.environ.get("EA_EXPORT_ORDERDETAILS_T1", ""),
         "t2": os.environ.get("EA_EXPORT_ORDERDETAILS_T2", ""),
     },
+    "items": {
+        "t1": os.environ.get("EA_EXPORT_ITEMS_T1", ""),
+        "t2": os.environ.get("EA_EXPORT_ITEMS_T2", ""),
+    },
 }
 
 
@@ -315,6 +319,8 @@ def get_export_data(
         "api": "public",
         "t1": tokens["t1"],
         "t2": tokens["t2"],
+        "get_data": "1",
+        "src": src,
         "pgsize": min(page_size, 5000),
     }
     if fields != "*":

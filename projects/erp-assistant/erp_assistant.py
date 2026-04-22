@@ -230,7 +230,10 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
             )
             result = _trim_stock(result)
         elif tool_name == "get_items":
-            result = ea.get_items(filter=tool_input.get("filter"))
+            where = None
+            if tool_input.get("filter"):
+                where = {"i1": ["ilike", f"%{tool_input['filter']}%"]}
+            result = ea.get_export_data(src="items", where=where, page_size=500)
         elif tool_name == "get_invoice_balance":
             result = ea.get_invoice_balance(
                 type=tool_input.get("type", "ar"),
@@ -248,7 +251,7 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
                 remarks=tool_input.get("remarks", ""),
             )
         elif tool_name == "query_data":
-            export_sources = {"orders", "partners", "bi_sales", "sqlOrderDetails()"}
+            export_sources = {"orders", "items", "partners", "bi_sales", "sqlOrderDetails()"}
             if tool_input["src"] in export_sources:
                 result = ea.get_export_data(
                     src=tool_input["src"],
