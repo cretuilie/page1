@@ -165,39 +165,28 @@ def get_invoice_balance(
     type: str = "ar",
     name: str = None,
     doc_no: str = None,
-    min_amt: float = 0.01,
 ) -> list[dict]:
     """
-    Returnează soldul facturilor neîncasate (ar) sau neplătite (ap).
+    Returnează tranzacțiile contabile pentru creanțe (ar) sau datorii (ap)
+    din jurnalul general (gl).
 
     Args:
-        type: 'ar' = de încasat de la clienți, 'ap' = de plătit la furnizori
+        type: 'ar' = creanțe clienți (cont 4111), 'ap' = datorii furnizori (cont 401)
         name: filtrează după numele partenerului
-        doc_no: filtrează după numărul facturii
-        min_amt: suma minimă neachitată (implicit 0.01)
+        doc_no: filtrează după numărul documentului
 
     Returns:
-        Lista de facturi cu sold restant
+        Lista de înregistrări contabile
     """
-    params = {
-        "get_docBal": "1",
-        "type": type,
-        "min_amt": min_amt,
-        "json": "true",
-    }
+    # 4111 = clienți (AR), 401 = furnizori (AP)
+    account_prefix = "4111" if type == "ar" else "401"
+    where = {"concr": ["ilike", f"{account_prefix}%"]}
     if name:
-        params["name"] = name
+        where["part"] = ["ilike", f"%{name}%"]
     if doc_no:
-        params["doc_no"] = doc_no
+        where["docn"] = ["ilike", f"%{doc_no}%"]
 
-    all_params = {**_base_params(), **params}
-    response = requests.get(BASE_URL, params=all_params, timeout=30)
-    response.raise_for_status()
-    raw = response.text.strip()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return [{"eroare": raw}]
+    return get_export_data(src="gl", where=where, orderby="docd", page_size=2000)
 
 
 def create_invoice(
@@ -286,6 +275,10 @@ EXPORT_TOKENS = {
     "items": {
         "t1": os.environ.get("EA_EXPORT_ITEMS_T1", ""),
         "t2": os.environ.get("EA_EXPORT_ITEMS_T2", ""),
+    },
+    "gl": {
+        "t1": os.environ.get("EA_EXPORT_GL_T1", ""),
+        "t2": os.environ.get("EA_EXPORT_GL_T2", ""),
     },
 }
 
