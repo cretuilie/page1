@@ -315,8 +315,6 @@ def get_export_data(
         "api": "public",
         "t1": tokens["t1"],
         "t2": tokens["t2"],
-        "get_exportdata": "1",
-        "Var1": src,
         "pgsize": min(page_size, 5000),
     }
     if fields != "*":
