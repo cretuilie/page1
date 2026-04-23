@@ -11,7 +11,7 @@ Utilizare:
 
 import json
 import os
-
+import time
 import sys
 import anthropic
 from dotenv import load_dotenv
@@ -204,18 +204,24 @@ Folosește pentru întrebări despre comenzi, parteneri, vânzări, contabilitat
 ]
 
 
-MAX_STOCK_ROWS = 300  # Limită tokeni Claude: trimitem max 300 produse per query
+MAX_STOCK_ROWS = 200   # Limită tokeni Claude: trimitem max 200 produse per query
+MAX_QUERY_ROWS = 50    # Limită pentru query_data / get_items / get_invoice_balance
+MAX_HISTORY = 8        # Mesaje păstrate în istoricul conversației (4 schimburi)
 
 
-def _trim_stock(result: list) -> list | dict:
+def _trim_result(result: list, max_rows: int, label: str = "înregistrări") -> list:
     """Limitează numărul de rânduri returnate la Claude."""
     if not isinstance(result, list):
         return result
     total = len(result)
-    trimmed = result[:MAX_STOCK_ROWS]
-    if total > MAX_STOCK_ROWS:
-        trimmed.append({"_nota": f"Afișate {MAX_STOCK_ROWS} din {total} produse. Folosește filtru sau gestiune specifică pentru mai multă precizie."})
+    trimmed = result[:max_rows]
+    if total > max_rows:
+        trimmed.append({"_nota": f"Afișate {max_rows} din {total} {label}. Adaugă filtre sau câmpuri specifice pentru mai multă precizie."})
     return trimmed
+
+
+def _trim_stock(result: list) -> list:
+    return _trim_result(result, MAX_STOCK_ROWS, "produse")
 
 
 def run_tool(tool_name: str, tool_input: dict) -> str:
@@ -234,13 +240,13 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
             if tool_input.get("filter"):
                 where = {"i1": ["ilike", f"%{tool_input['filter']}%"]}
             result = ea.get_export_data(src="items", where=where, page_size=500)
+            result = _trim_result(result, MAX_QUERY_ROWS, "articole")
         elif tool_name == "get_invoice_balance":
             result = ea.get_invoice_balance(
                 type=tool_input.get("type", "ar"),
                 name=tool_input.get("name"),
-                doc_no=tool_input.get("doc_no"),
-                min_amt=tool_input.get("min_amt", 0.01),
             )
+            result = _trim_result(result, MAX_QUERY_ROWS, "parteneri")
         elif tool_name == "create_invoice":
             result = ea.create_invoice(
                 bill_name=tool_input["bill_name"],
@@ -268,6 +274,7 @@ def run_tool(tool_name: str, tool_input: dict) -> str:
                     orderby=tool_input.get("orderby"),
                     page_size=tool_input.get("page_size", 2000),
                 )
+            result = _trim_result(result, MAX_QUERY_ROWS, "înregistrări")
         else:
             result = {"eroare": f"Unealtă necunoscută: {tool_name}"}
     except Exception as e:
@@ -316,6 +323,8 @@ def chat(messages: list) -> tuple[str, list]:
 
             # Adăugăm rezultatele uneltelor și continuăm conversația
             messages.append({"role": "user", "content": tool_results})
+            # Pauză pentru a evita rate limit-ul de 30K tokeni/minut Claude
+            time.sleep(3)
             continue
 
         # Stop reason neașteptat
@@ -468,6 +477,8 @@ def main():
                 print(f"\nEroare stoc: {e}\n")
         else:
             messages.append({"role": "user", "content": user_input})
+            if len(messages) > MAX_HISTORY:
+                messages = messages[-MAX_HISTORY:]
             try:
                 raspuns, messages = chat(messages)
                 print(f"\nAsistent: {raspuns}\n")

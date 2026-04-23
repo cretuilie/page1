@@ -164,29 +164,64 @@ def get_items(filter: str = None) -> list[dict]:
 def get_invoice_balance(
     type: str = "ar",
     name: str = None,
-    doc_no: str = None,
 ) -> list[dict]:
     """
-    Returnează tranzacțiile contabile pentru creanțe (ar) sau datorii (ap)
-    din jurnalul general (gl).
+    Returnează soldul net agregat pe partener (creanțe AR sau datorii AP).
+
+    Calcul: debit_account - credit_account per partener.
+    - AR (4111): facturile emise (condb=4111) minus încasările (concr=4111)
+    - AP (401):  facturile primite (concr=401) minus plățile (condb=401)
 
     Args:
-        type: 'ar' = creanțe clienți (cont 4111), 'ap' = datorii furnizori (cont 401)
+        type: 'ar' = creanțe clienți (4111), 'ap' = datorii furnizori (401)
         name: filtrează după numele partenerului
-        doc_no: filtrează după numărul documentului
 
     Returns:
-        Lista de înregistrări contabile
+        Lista de dict-uri cu: partener, debit, credit, sold — sortate descrescător după sold
     """
-    # 4111 = clienți (AR), 401 = furnizori (AP)
-    account_prefix = "4111" if type == "ar" else "401"
-    where = {"concr": ["ilike", f"{account_prefix}%"]}
-    if name:
-        where["part"] = ["ilike", f"%{name}%"]
-    if doc_no:
-        where["docn"] = ["ilike", f"%{doc_no}%"]
+    acct = "4111" if type == "ar" else "401"
+    part_filter = {"part": ["ilike", f"%{name}%"]} if name else {}
 
-    return get_export_data(src="gl", where=where, orderby="docd", page_size=2000)
+    # Apel 1: intrări unde contul e pe debit (factură emisă/primită)
+    debit_rows = get_export_data(
+        src="gl",
+        where={"condb": ["ilike", f"{acct}%"], **part_filter},
+        page_size=5000,
+    )
+    time.sleep(RETRY_DELAY)
+    # Apel 2: intrări unde contul e pe credit (încasare/plată)
+    credit_rows = get_export_data(
+        src="gl",
+        where={"concr": ["ilike", f"{acct}%"], **part_filter},
+        page_size=5000,
+    )
+
+    totals: dict[str, dict] = {}
+    for r in debit_rows:
+        if "eroare" in r:
+            return [r]
+        p = r.get("part", "?")
+        totals.setdefault(p, {"partener": p, "debit": 0.0, "credit": 0.0})
+        totals[p]["debit"] += float(r.get("suma", 0) or 0)
+
+    for r in credit_rows:
+        if "eroare" in r:
+            return [r]
+        p = r.get("part", "?")
+        totals.setdefault(p, {"partener": p, "debit": 0.0, "credit": 0.0})
+        totals[p]["credit"] += float(r.get("suma", 0) or 0)
+
+    result = []
+    for v in totals.values():
+        sold = round(v["debit"] - v["credit"], 2)
+        result.append({
+            "partener": v["partener"],
+            "debit": round(v["debit"], 2),
+            "credit": round(v["credit"], 2),
+            "sold": sold,
+        })
+
+    return sorted(result, key=lambda x: abs(x["sold"]), reverse=True)
 
 
 def create_invoice(
